@@ -14,41 +14,31 @@ DB = os.path.join(BASE_DIR, "recipes.db")
 
 # ---------------------- DATABASE ----------------------
 def init_db():
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+    with sqlite3.connect(DB, timeout=10) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        c = conn.cursor()
 
-    # users table
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT
-    )
-    """)
+        # Users table
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+        """)
 
-    # recipes table (image_base64 column may be added if missing)
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS recipes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        description TEXT,
-        owner_id INTEGER,
-        image_base64 TEXT,
-        FOREIGN KEY(owner_id) REFERENCES users(id)
-    )
-    """)
-    conn.commit()
+        # Recipes table
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            owner_id INTEGER,
+            image_base64 TEXT,
+            FOREIGN KEY (owner_id) REFERENCES users(id)
+        )
+        """)
 
-    # If older DB without image_base64, ensure column exists (defensive)
-    c.execute("PRAGMA table_info(recipes)")
-    cols = [r[1] for r in c.fetchall()]  # column names
-    if "image_base64" not in cols:
-        c.execute("ALTER TABLE recipes ADD COLUMN image_base64 TEXT")
-        conn.commit()
-
-    conn.close()
-
-init_db()
 
 
 # ---------------------- FRONTEND SERVING ----------------------
@@ -68,21 +58,27 @@ def register():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
+
     if not username or not password:
         return jsonify({"success": False, "message": "Missing username or password"}), 400
 
     try:
-        conn = sqlite3.connect(DB)
-        c = conn.cursor()
-        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
-        conn.commit()
-        user_id = c.lastrowid
-        conn.close()
+        with sqlite3.connect(DB, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            c = conn.cursor()
+            c.execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)",
+                (username, password)
+            )
+            user_id = c.lastrowid
+
         return jsonify({"success": True, "message": "Registered", "user_id": user_id}), 200
+
     except sqlite3.IntegrityError:
         return jsonify({"success": False, "message": "User exists"}), 400
     except Exception as e:
-        return jsonify({"success": False, "message": "Error: " + str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 
 # ---------------------- LOGIN ----------------------
@@ -94,7 +90,7 @@ def login():
     if not username or not password:
         return jsonify({"success": False, "message": "Missing username or password"}), 400
 
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     c = conn.cursor()
     c.execute("SELECT id FROM users WHERE username=? AND password=?", (username, password))
     user = c.fetchone()
@@ -118,7 +114,7 @@ def add_recipe():
     if not title or owner_id is None:
         return jsonify({"success": False, "message": "Missing title or owner_id"}), 400
 
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     c = conn.cursor()
     c.execute(
         "INSERT INTO recipes (title, description, owner_id, image_base64) VALUES (?, ?, ?, ?)",
@@ -133,7 +129,7 @@ def add_recipe():
 # ---------------------- GET ALL RECIPES ----------------------
 @app.route("/recipes", methods=["GET"])
 def get_recipes():
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     c = conn.cursor()
     c.execute("""
     SELECT r.id, r.title, r.description, r.image_base64, u.username
@@ -159,7 +155,7 @@ def get_recipes():
 # ---------------------- GET MY RECIPES ----------------------
 @app.route("/my_recipes/<int:user_id>", methods=["GET"])
 def get_my_recipes(user_id):
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     c = conn.cursor()
     c.execute("SELECT id, title, description, image_base64 FROM recipes WHERE owner_id=? ORDER BY id DESC", (user_id,))
     rows = c.fetchall()
@@ -176,7 +172,7 @@ def edit_recipe(recipe_id, owner_id):
     description = data.get("description")
     image_base64 = data.get("image_base64")  # optional
 
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     c = conn.cursor()
     # ensure owner
     c.execute("SELECT owner_id FROM recipes WHERE id=?", (recipe_id,))
@@ -201,7 +197,7 @@ def edit_recipe(recipe_id, owner_id):
 # ---------------------- DELETE RECIPE (owner only) ----------------------
 @app.route("/delete_recipe/<int:recipe_id>/<int:owner_id>", methods=["DELETE"])
 def delete_recipe(recipe_id, owner_id):
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     c = conn.cursor()
     # check owner
     c.execute("SELECT owner_id FROM recipes WHERE id=?", (recipe_id,))
@@ -220,4 +216,6 @@ def delete_recipe(recipe_id, owner_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    init_db()
+    app.run()
+
