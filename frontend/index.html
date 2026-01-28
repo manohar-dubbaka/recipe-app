@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Recipe App</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🍛 Recipe App</h1>
+      <p class="sub">Share recipes — view recipes — save your own</p>
+    </header>
+
+    <section id="auth-section" class="card">
+      <div class="auth-grid">
+        <div>
+          <h3>Login</h3>
+          <input id="login-username" placeholder="Username">
+          <input id="login-password" placeholder="Password" type="password">
+          <button class="btn" onclick="loginUser()">Login</button>
+        </div>
+
+        <div>
+          <h3>Register</h3>
+          <input id="reg-username" placeholder="Username">
+          <input id="reg-password" placeholder="Password" type="password">
+          <button class="btn" onclick="registerUser()">Register</button>
+        </div>
+      </div>
+      <p id="auth-msg" class="muted"></p>
+    </section>
+
+    <section id="recipe-section" class="card hidden">
+      <div class="top-row">
+        <div>
+          <h2 id="welcome-msg">Welcome!</h2>
+        </div>
+        <div class="controls">
+          <button class="btn" onclick="loadAllRecipes()">All recipes</button>
+          <button class="btn" onclick="loadMyRecipes()">My recipes</button>
+          <button class="btn outline" onclick="logoutUser()">Logout</button>
+        </div>
+      </div>
+
+      <hr />
+
+      <div class="card small">
+        <h3>Add recipe</h3>
+        <input id="recipe-title" placeholder="Recipe title">
+        <textarea id="recipe-desc" rows="3" placeholder="Short description"></textarea>
+        <input id="recipe-image" type="file" accept="image/*">
+        <div id="preview-wrap" class="hidden">
+          <p>Preview:</p>
+          <img id="preview-img" src="" alt="preview" />
+        </div>
+        <button class="btn" onclick="addRecipe()">Add recipe</button>
+      </div>
+
+      <h3>Recipes</h3>
+      <div id="recipes" class="grid"></div>
+    </section>
+
+    <footer class="muted small">Run backend from <code>backend/app.py</code> and open <a href="/">http://127.0.0.1:5000/</a></footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+
+# Database
+backend/recipes.db
+
+# Uploads
+backend/uploads/
+
+# OS files
+.DS_Store

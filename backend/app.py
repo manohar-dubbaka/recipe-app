@@ -1,0 +1,223 @@
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+import sqlite3
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))      # backend/
+FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")    # ../frontend
+
+app = Flask(__name__)
+CORS(app)
+
+DB = os.path.join(BASE_DIR, "recipes.db")
+
+
+# ---------------------- DATABASE ----------------------
+def init_db():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    # users table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT
+    )
+    """)
+
+    # recipes table (image_base64 column may be added if missing)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS recipes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        description TEXT,
+        owner_id INTEGER,
+        image_base64 TEXT,
+        FOREIGN KEY(owner_id) REFERENCES users(id)
+    )
+    """)
+    conn.commit()
+
+    # If older DB without image_base64, ensure column exists (defensive)
+    c.execute("PRAGMA table_info(recipes)")
+    cols = [r[1] for r in c.fetchall()]  # column names
+    if "image_base64" not in cols:
+        c.execute("ALTER TABLE recipes ADD COLUMN image_base64 TEXT")
+        conn.commit()
+
+    conn.close()
+
+init_db()
+
+
+# ---------------------- FRONTEND SERVING ----------------------
+@app.route("/")
+def serve_index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+@app.route("/<path:path>")
+def serve_frontend_files(path):
+    # serve static files (css, js, images if any)
+    return send_from_directory(FRONTEND_DIR, path)
+
+
+# ---------------------- REGISTER ----------------------
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"success": False, "message": "Missing username or password"}), 400
+
+    try:
+        conn = sqlite3.connect(DB)
+        c = conn.cursor()
+        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+        conn.commit()
+        user_id = c.lastrowid
+        conn.close()
+        return jsonify({"success": True, "message": "Registered", "user_id": user_id}), 200
+    except sqlite3.IntegrityError:
+        return jsonify({"success": False, "message": "User exists"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": "Error: " + str(e)}), 500
+
+
+# ---------------------- LOGIN ----------------------
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"success": False, "message": "Missing username or password"}), 400
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT id FROM users WHERE username=? AND password=?", (username, password))
+    user = c.fetchone()
+    conn.close()
+
+    if user:
+        return jsonify({"success": True, "message": "Login success", "user_id": user[0]}), 200
+    else:
+        return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+
+# ---------------------- ADD RECIPE ----------------------
+@app.route("/add_recipe", methods=["POST"])
+def add_recipe():
+    data = request.json or {}
+    title = data.get("title", "").strip()
+    description = data.get("description", "").strip()
+    owner_id = data.get("owner_id")
+    image_base64 = data.get("image_base64")  # optional: data URL like "data:image/png;base64,..."
+
+    if not title or owner_id is None:
+        return jsonify({"success": False, "message": "Missing title or owner_id"}), 400
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO recipes (title, description, owner_id, image_base64) VALUES (?, ?, ?, ?)",
+        (title, description, owner_id, image_base64)
+    )
+    conn.commit()
+    inserted_id = c.lastrowid
+    conn.close()
+    return jsonify({"success": True, "message": "Recipe added", "id": inserted_id}), 200
+
+
+# ---------------------- GET ALL RECIPES ----------------------
+@app.route("/recipes", methods=["GET"])
+def get_recipes():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("""
+    SELECT r.id, r.title, r.description, r.image_base64, u.username
+    FROM recipes r
+    JOIN users u ON r.owner_id = u.id
+    ORDER BY r.id DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    data = []
+    for r in rows:
+        data.append({
+            "id": r[0],
+            "title": r[1],
+            "description": r[2],
+            "image_base64": r[3],
+            "owner": r[4]
+        })
+    return jsonify(data), 200
+
+
+# ---------------------- GET MY RECIPES ----------------------
+@app.route("/my_recipes/<int:user_id>", methods=["GET"])
+def get_my_recipes(user_id):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT id, title, description, image_base64 FROM recipes WHERE owner_id=? ORDER BY id DESC", (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    data = [{"id": r[0], "title": r[1], "description": r[2], "image_base64": r[3]} for r in rows]
+    return jsonify(data), 200
+
+
+# ---------------------- EDIT RECIPE (owner only) ----------------------
+@app.route("/edit_recipe/<int:recipe_id>/<int:owner_id>", methods=["PUT"])
+def edit_recipe(recipe_id, owner_id):
+    data = request.json or {}
+    title = data.get("title")
+    description = data.get("description")
+    image_base64 = data.get("image_base64")  # optional
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    # ensure owner
+    c.execute("SELECT owner_id FROM recipes WHERE id=?", (recipe_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "Recipe not found"}), 404
+    if row[0] != owner_id:
+        conn.close()
+        return jsonify({"success": False, "message": "Not allowed"}), 403
+
+    # update fields that are provided
+    if image_base64 is not None:
+        c.execute("UPDATE recipes SET title=?, description=?, image_base64=? WHERE id=?", (title, description, image_base64, recipe_id))
+    else:
+        c.execute("UPDATE recipes SET title=?, description=? WHERE id=?", (title, description, recipe_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Recipe updated"}), 200
+
+
+# ---------------------- DELETE RECIPE (owner only) ----------------------
+@app.route("/delete_recipe/<int:recipe_id>/<int:owner_id>", methods=["DELETE"])
+def delete_recipe(recipe_id, owner_id):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    # check owner
+    c.execute("SELECT owner_id FROM recipes WHERE id=?", (recipe_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "Recipe not found"}), 404
+    if row[0] != owner_id:
+        conn.close()
+        return jsonify({"success": False, "message": "Not allowed"}), 403
+
+    c.execute("DELETE FROM recipes WHERE id=?", (recipe_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Recipe deleted"}), 200
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
