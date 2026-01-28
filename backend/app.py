@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 
@@ -66,10 +67,12 @@ def register():
         with sqlite3.connect(DB, timeout=10) as conn:
             conn.execute("PRAGMA journal_mode=WAL;")
             c = conn.cursor()
+            hashed_password = generate_password_hash(password)
             c.execute(
                 "INSERT INTO users (username, password) VALUES (?, ?)",
-                (username, password)
+                (username, hashed_password)
             )
+
             user_id = c.lastrowid
 
         return jsonify({"success": True, "message": "Registered", "user_id": user_id}), 200
@@ -87,19 +90,32 @@ def login():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
+
     if not username or not password:
         return jsonify({"success": False, "message": "Missing username or password"}), 400
 
-    conn = sqlite3.connect(DB, timeout=10)
-    c = conn.cursor()
-    c.execute("SELECT id FROM users WHERE username=? AND password=?", (username, password))
-    user = c.fetchone()
-    conn.close()
+    try:
+        with sqlite3.connect(DB, timeout=10) as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT id, password FROM users WHERE username=?",
+                (username,)
+            )
+            user = c.fetchone()
 
-    if user:
-        return jsonify({"success": True, "message": "Login success", "user_id": user[0]}), 200
-    else:
-        return jsonify({"success": False, "message": "Invalid credentials"}), 401
+        if not user:
+            return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+        user_id, stored_hash = user
+
+        if not check_password_hash(stored_hash, password):
+            return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+        return jsonify({"success": True, "message": "Login success", "user_id": user_id}), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 
 # ---------------------- ADD RECIPE ----------------------
@@ -217,5 +233,5 @@ def delete_recipe(recipe_id, owner_id):
 
 if __name__ == "__main__":
     init_db()
-    app.run()
+    app.run(host="0.0.0.0", port=10000)
 
