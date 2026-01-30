@@ -43,14 +43,12 @@ def init_db():
 
 
 # ---------------------- FRONTEND SERVING ----------------------
-@app.route("/")
-def serve_index():
-    return send_from_directory(FRONTEND_DIR, "index.html")
+from flask import render_template
 
-@app.route("/<path:path>")
-def serve_frontend_files(path):
-    # serve static files (css, js, images if any)
-    return send_from_directory(FRONTEND_DIR, path)
+@app.route("/")
+def index():
+    return render_template("index.html")
+
 
 
 # ---------------------- REGISTER ----------------------
