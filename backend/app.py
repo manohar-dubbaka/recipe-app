@@ -19,7 +19,6 @@ def init_db():
         conn.execute("PRAGMA journal_mode=WAL;")
         c = conn.cursor()
 
-        # Users table
         c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +27,6 @@ def init_db():
         )
         """)
 
-        # Recipes table
         c.execute("""
         CREATE TABLE IF NOT EXISTS recipes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +37,9 @@ def init_db():
             FOREIGN KEY (owner_id) REFERENCES users(id)
         )
         """)
+
+        conn.commit()   # 🔥 THIS LINE FIXES EVERYTHING
+
 
 
 
