@@ -11,6 +11,7 @@ app = Flask(__name__)
 CORS(app)
 
 DB = os.path.join(BASE_DIR, "recipes.db")
+init_db()
 
 
 # ---------------------- DATABASE ----------------------
@@ -231,5 +232,4 @@ def delete_recipe(recipe_id, owner_id):
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=10000)
